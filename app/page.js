@@ -12,8 +12,8 @@ import {
 import {
   SortableContext,
   sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable
+  useSortable,
+  rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
@@ -37,35 +37,57 @@ ChartJS.register(
   Legend
 );
 
-function CryptoItem({ crypto, onCryptoClick, onRemove }) {
+function SortableCryptoItem({ crypto, onCryptoClick, onRemove }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: crypto.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
   const handleRemove = (e) => {
-    e.stopPropagation(); // Voorkomt dat de modal opent
+    e.stopPropagation();
     onRemove(crypto.id);
   };
 
   return (
     <div
+      ref={setNodeRef}
+      style={style}
+      className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow hover:shadow-lg transition-shadow cursor-move relative"
       onClick={() => onCryptoClick(crypto)}
-      className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow hover:shadow-lg transition-shadow cursor-pointer"
     >
-      <div className="flex justify-between items-center mb-2">
+      <button
+        onClick={handleRemove}
+        className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 p-2 z-10"
+      >
+        ✕
+      </button>
+      
+      <div 
+        className="flex justify-between items-center mb-2"
+        {...attributes}
+        {...listeners}
+      >
         <div>
           <h2 className="text-xl font-semibold">{crypto.name}</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400">{crypto.symbol}</p>
         </div>
-        <button
-          onClick={handleRemove}
-          className="text-gray-500 hover:text-gray-700 p-2"
-        >
-          ✕
-        </button>
       </div>
-      <p className="text-2xl font-bold">
-        €{crypto.price?.toFixed(2)}
-      </p>
-      <p className={`${crypto.change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-        24u: {crypto.change?.toFixed(2)}%
-      </p>
+      <div>
+        <p className="text-2xl font-bold">
+          €{crypto.price?.toFixed(2)}
+        </p>
+        <p className={`${crypto.change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+          24u: {crypto.change?.toFixed(2)}%
+        </p>
+      </div>
     </div>
   );
 }
@@ -316,8 +338,33 @@ export default function Home() {
     }
   };
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+
+    if (active.id !== over.id) {
+      setPinnedCryptos((items) => {
+        const oldIndex = items.findIndex(item => item.id === active.id);
+        const newIndex = items.findIndex(item => item.id === over.id);
+        
+        const newArray = [...items];
+        const [movedItem] = newArray.splice(oldIndex, 1);
+        newArray.splice(newIndex, 0, movedItem);
+        
+        localStorage.setItem('pinnedCryptos', JSON.stringify(newArray));
+        return newArray;
+      });
+    }
+  };
+
   return (
-    <div className="min-h-screen p-8 pb-20 gap-8 font-sans">
+    <div className="min-h-screen p-8 pb-20 gap-8 font-sans relative">
       <main className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold mb-8">Crypto Tracker</h1>
         
@@ -359,17 +406,28 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Gepinde crypto's */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {pinnedCryptos.map((crypto) => (
-            <CryptoItem
-              key={crypto.id}
-              crypto={crypto}
-              onCryptoClick={handleCryptoClick}
-              onRemove={removeCrypto}
-            />
-          ))}
-        </div>
+        {/* Drag & Drop Grid */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={pinnedCryptos.map(crypto => crypto.id)}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pinnedCryptos.map((crypto) => (
+                <SortableCryptoItem
+                  key={crypto.id}
+                  crypto={crypto}
+                  onCryptoClick={handleCryptoClick}
+                  onRemove={removeCrypto}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
 
         {/* Grafiek Modal */}
         {selectedCrypto && (
@@ -428,6 +486,11 @@ export default function Home() {
           </div>
         )}
       </main>
+      
+      {/* Footer */}
+      <footer className="absolute bottom-4 left-0 right-0 text-center text-gray-400 text-sm">
+        Made by AI
+      </footer>
     </div>
   );
 }
